@@ -1,25 +1,23 @@
 #pragma once
 
 #include <cstdint>
-#include <random>
 
 namespace neat {
 
 /**
- * @brief A strictly deterministic random number generator.
- * Wraps the Mersenne Twister but implements custom distribution logic
- * to guarantee bit-for-bit reproducibility across different compilers (GCC/Clang/MSVC).
+ * @brief A strictly deterministic, high-performance random number generator.
+ * Implements Xoshiro256** for blazingly fast generation with a tiny 32-byte 
+ * cache footprint, seeded via SplitMix64.
  */
 class Random {
 public:
     /**
-     * @brief Initialize the PRNG with a specific seed.
+     * @brief Initialize the PRNG with a specific master seed.
      */
     explicit Random(uint64_t seed);
 
     /**
      * @brief Generates a random double in the range [0.0, 1.0).
-     * Guaranteed to be identical across all platforms for the same seed.
      */
     double random_double();
 
@@ -34,8 +32,17 @@ public:
     bool prob(double p);
 
 private:
-    // The core 64-bit Mersenne Twister engine
-    std::mt19937_64 engine;
+    // The entire state required for Xoshiro256**. 
+    // Fits perfectly into half a CPU cache line.
+    uint64_t state[4];
+
+    // Core generation engine
+    uint64_t next();
+    
+    // Bitwise left rotation helper
+    static inline uint64_t rotl(const uint64_t x, int k) {
+        return (x << k) | (x >> (64 - k));
+    }
 };
 
 } // namespace neat
