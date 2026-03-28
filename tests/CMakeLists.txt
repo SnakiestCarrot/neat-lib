@@ -27,3 +27,13 @@ gtest_discover_tests(test_random DISCOVERY_MODE PRE_TEST)
 add_executable(test_network test_network.cpp)
 target_link_libraries(test_network PRIVATE neat_core GTest::gtest_main)
 gtest_discover_tests(test_network DISCOVERY_MODE PRE_TEST)
+
+# 5. Innovation Tracker Tests
+add_executable(test_innovation test_innovation.cpp)
+target_link_libraries(test_innovation PRIVATE neat_core GTest::gtest_main)
+gtest_discover_tests(test_innovation DISCOVERY_MODE PRE_TEST)
+
+# 6. Genome Tests
+add_executable(test_genome test_genome.cpp)
+target_link_libraries(test_genome PRIVATE neat_core GTest::gtest_main)
+gtest_discover_tests(test_genome DISCOVERY_MODE PRE_TEST)
