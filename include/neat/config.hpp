@@ -6,6 +6,13 @@
 
 namespace neat {
 
+enum class ActivationType : uint8_t {
+    SIGMOID,
+    TANH,
+    RELU,
+    LEAKY_RELU,
+};
+
 /**
  * @brief Configuration parameters for the NEAT evolutionary process.
  * Default values are roughly based on Stanley's original 2002 paper.
@@ -15,6 +22,7 @@ struct Config {
     // System Parameters
     // ------------------------------------------------------------------------
     uint64_t seed = 42; // The master seed for the entire evolutionary run
+    ActivationType activation = ActivationType::SIGMOID; // As per Stanley's original paper
     
     // ------------------------------------------------------------------------
     // Population & Evaluation Parameters

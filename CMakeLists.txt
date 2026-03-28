@@ -12,11 +12,13 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Add all your .cpp files here
 add_library(neat_core
     src/genome.cpp
+    src/innovation.cpp
     src/network.cpp
     src/population.cpp
     src/random.cpp
     src/config.cpp
 )
+
 
 # Tell CMake where the public headers are
 target_include_directories(neat_core PUBLIC 

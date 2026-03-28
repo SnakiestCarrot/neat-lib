@@ -16,9 +16,14 @@ include(GoogleTest)
 add_executable(test_config test_config.cpp)
 # Link our library AND gtest_main
 target_link_libraries(test_config PRIVATE neat_core GTest::gtest_main)
-gtest_discover_tests(test_config)
+gtest_discover_tests(test_config DISCOVERY_MODE PRE_TEST)
 
 # 3. Random Determinism Tests
 add_executable(test_random test_random.cpp)
 target_link_libraries(test_random PRIVATE neat_core GTest::gtest_main)
-gtest_discover_tests(test_random)
+gtest_discover_tests(test_random DISCOVERY_MODE PRE_TEST)
+
+# 4. Network Tests
+add_executable(test_network test_network.cpp)
+target_link_libraries(test_network PRIVATE neat_core GTest::gtest_main)
+gtest_discover_tests(test_network DISCOVERY_MODE PRE_TEST)

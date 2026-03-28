@@ -9,6 +9,7 @@ namespace neat {
 // Forward declarations
 struct Config;
 class Random;
+class InnovationTracker;
 
 // ---------------------------------------------------------------------------
 // Gene Types — kept as plain structs for data-oriented, cache-friendly layout
@@ -43,16 +44,16 @@ public:
         uint32_t num_inputs,
         uint32_t num_outputs,
         Random& rng,
-        uint32_t& innovation_counter
+        InnovationTracker& innovations
     );
 
     // --- Mutation (modifies this genome in-place) ---------------------------
 
-    void mutate(const Config& cfg, Random& rng, uint32_t& innovation_counter);
+    void mutate(const Config& cfg, Random& rng, InnovationTracker& innovations);
 
     void mutate_weights(const Config& cfg, Random& rng);
-    void mutate_add_node(Random& rng, uint32_t& innovation_counter);
-    void mutate_add_connection(const Config& cfg, Random& rng, uint32_t& innovation_counter);
+    void mutate_add_node(Random& rng, InnovationTracker& innovations);
+    void mutate_add_connection(const Config& cfg, Random& rng, InnovationTracker& innovations);
     void mutate_toggle_enable(Random& rng);
 
     // --- Crossover ----------------------------------------------------------

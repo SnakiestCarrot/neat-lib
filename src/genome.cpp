@@ -1,5 +1,6 @@
 #include "neat/genome.hpp"
 #include "neat/config.hpp"
+#include "neat/innovation.hpp"
 #include "neat/random.hpp"
 
 #include <algorithm>
@@ -25,7 +26,7 @@ Genome Genome::create_minimal(
     uint32_t num_inputs,
     uint32_t num_outputs,
     Random& rng,
-    uint32_t& innovation_counter
+    InnovationTracker& innovations
 ) {
     Genome g;
     g.num_inputs_ = num_inputs;
@@ -52,7 +53,7 @@ Genome Genome::create_minimal(
     for (uint32_t src = 0; src < num_source; ++src) {
         for (uint32_t dst = 0; dst < num_outputs; ++dst) {
             ConnectionGene conn{
-                innovation_counter++,
+                innovations.get_or_assign(src, first_output + dst),
                 src,
                 first_output + dst,
                 rng.random_double() * 4.0 - 2.0, // [-2.0, 2.0)
@@ -64,10 +65,6 @@ Genome Genome::create_minimal(
 
     return g;
 }
-
-// ===========================================================================
-// Node lookup
-// ===========================================================================
 
 // Binary search lookup for a node by ID, since nodes are kept sorted by id. 
 // Returns nullptr if not found.
@@ -91,15 +88,15 @@ const NodeGene* Genome::find_node(uint32_t id) const {
 // Mutation
 // ===========================================================================
 
-void Genome::mutate(const Config& cfg, Random& rng, uint32_t& innovation_counter) {
+void Genome::mutate(const Config& cfg, Random& rng, InnovationTracker& innovations) {
     if (rng.prob(cfg.prob_mutate_weight)) {
         mutate_weights(cfg, rng);
     }
     if (rng.prob(cfg.prob_add_node)) {
-        mutate_add_node(rng, innovation_counter);
+        mutate_add_node(rng, innovations);
     }
     if (rng.prob(cfg.prob_add_link)) {
-        mutate_add_connection(cfg, rng, innovation_counter);
+        mutate_add_connection(cfg, rng, innovations);
     }
     if (rng.prob(cfg.prob_toggle_enable)) {
         mutate_toggle_enable(rng);
@@ -116,7 +113,7 @@ void Genome::mutate_weights(const Config& cfg, Random& rng) {
     }
 }
 
-void Genome::mutate_add_node(Random& rng, uint32_t& innovation_counter) {
+void Genome::mutate_add_node(Random& rng, InnovationTracker& innovations) {
     // Pick a random enabled connection to split
     std::vector<size_t> enabled_indices;
     for (size_t i = 0; i < connections.size(); ++i) {
@@ -135,13 +132,13 @@ void Genome::mutate_add_node(Random& rng, uint32_t& innovation_counter) {
     nodes.push_back({new_node_id, NodeType::HIDDEN});
 
     // Source -> new node (weight 1.0 to preserve signal)
-    add_connection({innovation_counter++, old_conn.from, new_node_id, 1.0, true});
+    add_connection({innovations.get_or_assign(old_conn.from, new_node_id), old_conn.from, new_node_id, 1.0, true});
 
     // New node -> old target (old weight to preserve behavior)
-    add_connection({innovation_counter++, new_node_id, old_conn.to, old_conn.weight, true});
+    add_connection({innovations.get_or_assign(new_node_id, old_conn.to), new_node_id, old_conn.to, old_conn.weight, true});
 }
 
-void Genome::mutate_add_connection(const Config& cfg, Random& rng, uint32_t& innovation_counter) {
+void Genome::mutate_add_connection(const Config& cfg, Random& rng, InnovationTracker& innovations) {
     // Build source/target candidate lists
     std::vector<uint32_t> sources;
     std::vector<uint32_t> targets;
@@ -155,8 +152,7 @@ void Genome::mutate_add_connection(const Config& cfg, Random& rng, uint32_t& inn
     }
     if (sources.empty() || targets.empty()) return;
 
-    constexpr int max_attempts = 20;
-    for (int attempt = 0; attempt < max_attempts; ++attempt) {
+    for (uint32_t attempt = 0; attempt < cfg.max_attempts_add_link; ++attempt) {
         uint32_t from_id = sources[rng.random_int(0, static_cast<int>(sources.size()) - 1)];
         uint32_t to_id = targets[rng.random_int(0, static_cast<int>(targets.size()) - 1)];
 
@@ -164,7 +160,7 @@ void Genome::mutate_add_connection(const Config& cfg, Random& rng, uint32_t& inn
         if (has_connection(from_id, to_id)) continue;
         if (would_create_cycle(from_id, to_id)) continue;
 
-        add_connection({innovation_counter++, from_id, to_id, rng.random_double() * 4.0 - 2.0, true});
+        add_connection({innovations.get_or_assign(from_id, to_id), from_id, to_id, rng.random_double() * 4.0 - 2.0, true});
         return;
     }
 }
@@ -174,10 +170,6 @@ void Genome::mutate_toggle_enable(Random& rng) {
     int idx = rng.random_int(0, static_cast<int>(connections.size()) - 1);
     connections[idx].enabled = !connections[idx].enabled;
 }
-
-// ===========================================================================
-// Crossover
-// ===========================================================================
 
 Genome Genome::crossover(
     const Genome& more_fit,
