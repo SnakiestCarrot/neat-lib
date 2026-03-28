@@ -23,6 +23,12 @@ struct Config {
     // ------------------------------------------------------------------------
     uint64_t seed = 42; // The master seed for the entire evolutionary run
     ActivationType activation = ActivationType::SIGMOID; // As per Stanley's original paper
+
+    // ------------------------------------------------------------------------
+    // Network Topology
+    // ------------------------------------------------------------------------
+    uint32_t num_inputs  = 0; // Number of input nodes (excluding bias)
+    uint32_t num_outputs = 0; // Number of output nodes
     
     // ------------------------------------------------------------------------
     // Population & Evaluation Parameters

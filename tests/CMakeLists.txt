@@ -37,3 +37,8 @@ gtest_discover_tests(test_innovation DISCOVERY_MODE PRE_TEST)
 add_executable(test_genome test_genome.cpp)
 target_link_libraries(test_genome PRIVATE neat_core GTest::gtest_main)
 gtest_discover_tests(test_genome DISCOVERY_MODE PRE_TEST)
+
+# 7. Population Tests
+add_executable(test_population test_population.cpp)
+target_link_libraries(test_population PRIVATE neat_core GTest::gtest_main)
+gtest_discover_tests(test_population DISCOVERY_MODE PRE_TEST)

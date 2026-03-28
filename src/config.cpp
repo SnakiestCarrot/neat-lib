@@ -3,6 +3,14 @@
 namespace neat {
 
 void Config::validate() const {
+    // Topology checks
+    if (num_inputs == 0) {
+        throw std::invalid_argument("NEAT Config: num_inputs must be greater than 0.");
+    }
+    if (num_outputs == 0) {
+        throw std::invalid_argument("NEAT Config: num_outputs must be greater than 0.");
+    }
+
     // Population checks
     if (population_size == 0) {
         throw std::invalid_argument("NEAT Config: population_size must be greater than 0.");

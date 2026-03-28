@@ -2,9 +2,11 @@
 #include <stdexcept>
 #include "neat/config.hpp"
 
-// Test that the default configuration is mathematically valid
+// Test that a fully specified configuration is mathematically valid
 TEST(ConfigTest, DefaultConfigIsValid) {
     neat::Config config;
+    config.num_inputs  = 2;
+    config.num_outputs = 1;
     EXPECT_NO_THROW(config.validate());
 }
 

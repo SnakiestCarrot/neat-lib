@@ -124,18 +124,26 @@ void Genome::mutate_add_node(Random& rng, InnovationTracker& innovations) {
     if (enabled_indices.empty()) return;
 
     size_t idx = enabled_indices[rng.random_int(0, static_cast<int>(enabled_indices.size()) - 1)];
-    ConnectionGene& old_conn = connections[idx];
-    old_conn.enabled = false;
+    connections[idx].enabled = false;
 
-    // New hidden node with next sequential ID
-    uint32_t new_node_id = static_cast<uint32_t>(nodes.size());
+    // Copy values out before any add_connection call — add_connection inserts
+    // into the connections vector, which can reallocate it and invalidate any
+    // reference or pointer into it.
+    const uint32_t from   = connections[idx].from;
+    const uint32_t to     = connections[idx].to;
+    const double   weight = connections[idx].weight;
+
+    // New hidden node — use back().id + 1 rather than nodes.size() because
+    // crossover can produce genomes with gaps in node IDs (e.g. [0,1,2,5]),
+    // and nodes.size() would then collide with an existing ID.
+    uint32_t new_node_id = nodes.back().id + 1;
     nodes.push_back({new_node_id, NodeType::HIDDEN});
 
     // Source -> new node (weight 1.0 to preserve signal)
-    add_connection({innovations.get_or_assign(old_conn.from, new_node_id), old_conn.from, new_node_id, 1.0, true});
+    add_connection({innovations.get_or_assign(from, new_node_id), from, new_node_id, 1.0, true});
 
     // New node -> old target (old weight to preserve behavior)
-    add_connection({innovations.get_or_assign(new_node_id, old_conn.to), new_node_id, old_conn.to, old_conn.weight, true});
+    add_connection({innovations.get_or_assign(new_node_id, to), new_node_id, to, weight, true});
 }
 
 void Genome::mutate_add_connection(const Config& cfg, Random& rng, InnovationTracker& innovations) {
@@ -303,7 +311,11 @@ bool Genome::would_create_cycle(uint32_t from, uint32_t to) const {
         frontier.pop();
 
         for (const auto& c : connections) {
-            if (!c.enabled) continue;
+            // Check all connections, not just enabled ones. A disabled connection
+            // can be re-enabled at any time (crossover, toggle mutation), so we
+            // must treat the full structural graph as permanent when checking for
+            // cycles. Only considering enabled connections here allowed cycles to
+            // form when a disabled gene was later re-enabled.
             if (c.from == current) {
                 if (c.to == from) return true;
                 if (visited.insert(c.to).second) {
