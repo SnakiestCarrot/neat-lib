@@ -45,6 +45,7 @@ struct Config {
 
     double prob_add_node         = 0.03; // Chance to add a new node
     double prob_add_link         = 0.05; // Chance to add a new connection
+    uint32_t max_attempts_add_link = 20; // Max attempts to find a valid connection when adding a link
     double prob_toggle_enable    = 0.01; // Chance to toggle a connection's enabled status
 
     // ------------------------------------------------------------------------

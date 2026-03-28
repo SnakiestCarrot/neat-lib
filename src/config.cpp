@@ -1,4 +1,4 @@
-#include "../include/neat/config.hpp"
+#include "neat/config.hpp"
 
 namespace neat {
 
