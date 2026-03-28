@@ -6,5 +6,6 @@
 #include "neat/random.hpp"
 
 int main() {
+    printf("This is supposed to be snake!");
     return 0;
 }
