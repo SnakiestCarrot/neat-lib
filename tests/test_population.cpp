@@ -11,6 +11,9 @@ static neat::Config make_config(uint32_t pop_size = 20) {
     // Disable structural mutations so genomes stay comparable across tests
     cfg.prob_add_node   = 0.0;
     cfg.prob_add_link   = 0.0;
+    // Disable parallel eval by default — tests use shared-state lambdas that
+    // are not thread-safe. Parallelism is tested explicitly below.
+    cfg.parallel_eval   = false;
     return cfg;
 }
 
@@ -241,6 +244,62 @@ TEST(PopulationTest, SameSeedProducesSameResults) {
     for (size_t i = 0; i < g1.connections.size(); ++i) {
         EXPECT_DOUBLE_EQ(g1.connections[i].weight,     g2.connections[i].weight);
         EXPECT_EQ(g1.connections[i].innovation, g2.connections[i].innovation);
+    }
+}
+
+// ============================================================================
+// Parallelism — determinism guarantees
+// ============================================================================
+
+// Helper: run a population for N generations and return the connection weights
+// of the first genome afterwards. Uses a stateless eval so it is safe to call
+// with parallel_eval=true.
+static std::vector<double> run_and_collect(neat::Config cfg, int generations) {
+    neat::Population pop(cfg);
+    // Fitness is derived purely from network output — no shared mutable state,
+    // so this lambda is safe to call concurrently from multiple threads.
+    auto eval = [](neat::Network& net) { return net.activate({1.0, 0.5})[0]; };
+    for (int i = 0; i < generations; ++i) {
+        pop.run_generation(eval);
+    }
+    std::vector<double> weights;
+    for (const auto& c : pop.genomes()[0].connections) {
+        weights.push_back(c.weight);
+    }
+    return weights;
+}
+
+TEST(PopulationTest, ParallelAndSequentialProduceSameResults) {
+    // Both configs share the same seed. One uses parallel eval, the other
+    // sequential. epoch() is always single-threaded so the outcome must match.
+    neat::Config seq_cfg = make_config(20);
+    seq_cfg.parallel_eval = false;
+
+    neat::Config par_cfg = make_config(20);
+    par_cfg.parallel_eval = true;
+
+    auto seq_weights = run_and_collect(seq_cfg, 5);
+    auto par_weights = run_and_collect(par_cfg, 5);
+
+    ASSERT_EQ(seq_weights.size(), par_weights.size());
+    for (size_t i = 0; i < seq_weights.size(); ++i) {
+        EXPECT_DOUBLE_EQ(seq_weights[i], par_weights[i])
+            << "Weight mismatch at connection " << i;
+    }
+}
+
+TEST(PopulationTest, TwoParallelRunsSameSeedProduceSameResults) {
+    // Two parallel populations with the same seed must converge identically.
+    neat::Config cfg = make_config(20);
+    cfg.parallel_eval = true;
+
+    auto weights1 = run_and_collect(cfg, 5);
+    auto weights2 = run_and_collect(cfg, 5);
+
+    ASSERT_EQ(weights1.size(), weights2.size());
+    for (size_t i = 0; i < weights1.size(); ++i) {
+        EXPECT_DOUBLE_EQ(weights1[i], weights2[i])
+            << "Weight mismatch at connection " << i;
     }
 }
 

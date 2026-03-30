@@ -26,6 +26,18 @@ target_include_directories(neat_core PUBLIC
 )
 
 # -----------------------------------------------------------------------------
+# Optional: Intel TBB for parallel STL (std::execution::par_unseq)
+# -----------------------------------------------------------------------------
+find_package(TBB QUIET)
+if(TBB_FOUND)
+    message(STATUS "TBB found — parallel evaluation enabled")
+    target_link_libraries(neat_core PRIVATE TBB::tbb)
+    target_compile_definitions(neat_core PUBLIC NEAT_PARALLEL_EVAL=1)
+else()
+    message(STATUS "TBB not found — parallel_eval will fall back to sequential")
+endif()
+
+# -----------------------------------------------------------------------------
 # High-Performance Compiler Flags
 # -----------------------------------------------------------------------------
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
