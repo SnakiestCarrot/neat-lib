@@ -1,0 +1,944 @@
+#include "neat/config.hpp"
+
+namespace neat {
+
+void Config::validate() const {
+    // Topology checks
+    if (num_inputs == 0) {
+        throw std::invalid_argument("NEAT Config: num_inputs must be greater than 0.");
+    }
+    if (num_outputs == 0) {
+        throw std::invalid_argument("NEAT Config: num_outputs must be greater than 0.");
+    }
+
+    // Population checks
+    if (population_size == 0) {
+        throw std::invalid_argument("NEAT Config: population_size must be greater than 0.");
+    }
+    
+    if (survival_threshold <= 0.0 || survival_threshold > 1.0) {
+        throw std::invalid_argument("NEAT Config: survival_threshold must be in range (0.0, 1.0].");
+    }
+
+    // Speciation checks
+    if (compat_threshold <= 0.0) {
+        throw std::invalid_argument("NEAT Config: compat_threshold must be strictly positive.");
+    }
+    if (c1 < 0.0 || c2 < 0.0 || c3 < 0.0) {
+        throw std::invalid_argument("NEAT Config: Speciation coefficients (c1, c2, c3) cannot be negative.");
+    }
+
+    // Probability checks helper lambda
+    auto check_prob = [](double p, const std::string& name) {
+        if (p < 0.0 || p > 1.0) {
+            throw std::invalid_argument("NEAT Config: " + name + " must be between 0.0 and 1.0.");
+        }
+    };
+
+    check_prob(prob_mutate_weight, "prob_mutate_weight");
+    check_prob(prob_weight_replaced, "prob_weight_replaced");
+    check_prob(prob_add_node, "prob_add_node");
+    check_prob(prob_add_link, "prob_add_link");
+    check_prob(prob_toggle_enable, "prob_toggle_enable");
+    check_prob(prob_crossover, "prob_crossover");
+    check_prob(prob_reenable_gene, "prob_reenable_gene");
+    
+    // Perturbation check
+    if (weight_mutation_power <= 0.0) {
+        throw std::invalid_argument("NEAT Config: weight_mutation_power must be positive.");
+    }
+}
+
+} // namespace neat#include "neat/genome.hpp"
+#include "neat/config.hpp"
+#include "neat/innovation.hpp"
+#include "neat/random.hpp"
+
+#include <algorithm>
+#include <cmath>
+#include <queue>
+#include <unordered_map>
+
+namespace neat {
+
+// ===========================================================================
+// Helper: pack (from, to) into a single uint64_t key
+// ===========================================================================
+
+static inline uint64_t pack_pair(uint32_t from, uint32_t to) {
+    return (static_cast<uint64_t>(from) << 32) | to;
+}
+
+// ===========================================================================
+// Construction
+// ===========================================================================
+
+Genome Genome::create_minimal(
+    uint32_t num_inputs,
+    uint32_t num_outputs,
+    Random& rng,
+    InnovationTracker& innovations
+) {
+    Genome g;
+    g.num_inputs_ = num_inputs;
+    g.num_outputs_ = num_outputs;
+
+    uint32_t node_id = 0;
+
+    // Bias node (always id 0)
+    g.nodes.push_back({node_id++, NodeType::BIAS});
+
+    // Input nodes
+    for (uint32_t i = 0; i < num_inputs; ++i) {
+        g.nodes.push_back({node_id++, NodeType::INPUT});
+    }
+
+    // Output nodes
+    uint32_t first_output = node_id;
+    for (uint32_t i = 0; i < num_outputs; ++i) {
+        g.nodes.push_back({node_id++, NodeType::OUTPUT});
+    }
+
+    // Fully connect all input + bias nodes to all output nodes
+    uint32_t num_source = num_inputs + 1; // +1 for bias
+    for (uint32_t src = 0; src < num_source; ++src) {
+        for (uint32_t dst = 0; dst < num_outputs; ++dst) {
+            ConnectionGene conn{
+                innovations.get_or_assign(src, first_output + dst),
+                src,
+                first_output + dst,
+                rng.random_double() * 4.0 - 2.0, // [-2.0, 2.0)
+                true
+            };
+            g.add_connection(conn);
+        }
+    }
+
+    return g;
+}
+
+// Binary search lookup for a node by ID, since nodes are kept sorted by id. 
+// Returns nullptr if not found.
+const NodeGene* Genome::find_node(uint32_t id) const {
+    int l = 0;
+    int r = static_cast<int>(nodes.size()) - 1;
+    while (l <= r) {
+        int m = l + (r-l) / 2;
+        if (nodes[m].id == id) {
+            return &nodes[m];
+        } else if (nodes[m].id < id) {
+            l = m + 1;
+        } else {
+            r = m - 1;
+        }
+    }
+    return nullptr;
+}
+
+// ===========================================================================
+// Mutation
+// ===========================================================================
+
+void Genome::mutate(const Config& cfg, Random& rng, InnovationTracker& innovations) {
+    if (rng.prob(cfg.prob_mutate_weight)) {
+        mutate_weights(cfg, rng);
+    }
+    if (rng.prob(cfg.prob_add_node)) {
+        mutate_add_node(rng, innovations);
+    }
+    if (rng.prob(cfg.prob_add_link)) {
+        mutate_add_connection(cfg, rng, innovations);
+    }
+    if (rng.prob(cfg.prob_toggle_enable)) {
+        mutate_toggle_enable(rng);
+    }
+}
+
+void Genome::mutate_weights(const Config& cfg, Random& rng) {
+    for (auto& conn : connections) {
+        if (rng.prob(cfg.prob_weight_replaced)) {
+            conn.weight = rng.random_double() * 4.0 - 2.0;
+        } else {
+            conn.weight += (rng.random_double() * 2.0 - 1.0) * cfg.weight_mutation_power;
+        }
+    }
+}
+
+void Genome::mutate_add_node(Random& rng, InnovationTracker& innovations) {
+    // Pick a random enabled connection to split
+    std::vector<size_t> enabled_indices;
+    for (size_t i = 0; i < connections.size(); ++i) {
+        if (connections[i].enabled) {
+            enabled_indices.push_back(i);
+        }
+    }
+    if (enabled_indices.empty()) return;
+
+    size_t idx = enabled_indices[rng.random_int(0, static_cast<int>(enabled_indices.size()) - 1)];
+    connections[idx].enabled = false;
+
+    // Copy values out before any add_connection call — add_connection inserts
+    // into the connections vector, which can reallocate it and invalidate any
+    // reference or pointer into it.
+    const uint32_t from   = connections[idx].from;
+    const uint32_t to     = connections[idx].to;
+    const double   weight = connections[idx].weight;
+
+    // New hidden node — use back().id + 1 rather than nodes.size() because
+    // crossover can produce genomes with gaps in node IDs (e.g. [0,1,2,5]),
+    // and nodes.size() would then collide with an existing ID.
+    uint32_t new_node_id = nodes.back().id + 1;
+    nodes.push_back({new_node_id, NodeType::HIDDEN});
+
+    // Source -> new node (weight 1.0 to preserve signal)
+    add_connection({innovations.get_or_assign(from, new_node_id), from, new_node_id, 1.0, true});
+
+    // New node -> old target (old weight to preserve behavior)
+    add_connection({innovations.get_or_assign(new_node_id, to), new_node_id, to, weight, true});
+}
+
+void Genome::mutate_add_connection(const Config& cfg, Random& rng, InnovationTracker& innovations) {
+    // Build source/target candidate lists
+    std::vector<uint32_t> sources;
+    std::vector<uint32_t> targets;
+    for (const auto& n : nodes) {
+        if (n.type != NodeType::OUTPUT) {
+            sources.push_back(n.id);
+        }
+        if (n.type != NodeType::INPUT && n.type != NodeType::BIAS) {
+            targets.push_back(n.id);
+        }
+    }
+    if (sources.empty() || targets.empty()) return;
+
+    for (uint32_t attempt = 0; attempt < cfg.max_attempts_add_link; ++attempt) {
+        uint32_t from_id = sources[rng.random_int(0, static_cast<int>(sources.size()) - 1)];
+        uint32_t to_id = targets[rng.random_int(0, static_cast<int>(targets.size()) - 1)];
+
+        if (from_id == to_id) continue;
+        if (has_connection(from_id, to_id)) continue;
+        if (would_create_cycle(from_id, to_id)) continue;
+
+        add_connection({innovations.get_or_assign(from_id, to_id), from_id, to_id, rng.random_double() * 4.0 - 2.0, true});
+        return;
+    }
+}
+
+void Genome::mutate_toggle_enable(Random& rng) {
+    if (connections.empty()) return;
+    int idx = rng.random_int(0, static_cast<int>(connections.size()) - 1);
+    connections[idx].enabled = !connections[idx].enabled;
+}
+
+Genome Genome::crossover(
+    const Genome& more_fit,
+    const Genome& less_fit,
+    const Config& cfg,
+    Random& rng
+) {
+    Genome child;
+    child.num_inputs_ = more_fit.num_inputs_;
+    child.num_outputs_ = more_fit.num_outputs_;
+
+    // Index less_fit connections by innovation for O(1) matching
+    std::unordered_map<uint32_t, const ConnectionGene*> less_fit_map;
+    for (const auto& c : less_fit.connections) {
+        less_fit_map[c.innovation] = &c;
+    }
+
+    // Track which node IDs the child needs
+    std::unordered_set<uint32_t> child_node_ids;
+
+    for (const auto& gene : more_fit.connections) {
+        auto it = less_fit_map.find(gene.innovation);
+
+        if (it != less_fit_map.end()) {
+            // Matching gene: randomly inherit from either parent
+            const ConnectionGene& chosen = rng.prob(0.5) ? gene : *(it->second);
+            ConnectionGene child_gene = chosen;
+
+            // If disabled in either parent, chance to re-enable
+            if (!gene.enabled || !it->second->enabled) {
+                child_gene.enabled = rng.prob(cfg.prob_reenable_gene);
+            }
+
+            child.add_connection(child_gene);
+        } else {
+            // Disjoint/excess: inherit from more fit parent
+            child.add_connection(gene);
+        }
+
+        child_node_ids.insert(child.connections.back().from);
+        child_node_ids.insert(child.connections.back().to);
+    }
+
+    // Inherit node genes from the more fit parent for all referenced nodes
+    for (const auto& node : more_fit.nodes) {
+        if (child_node_ids.count(node.id) || node.type == NodeType::INPUT
+            || node.type == NodeType::BIAS || node.type == NodeType::OUTPUT) {
+            child.nodes.push_back(node);
+        }
+    }
+
+    return child;
+}
+
+// ===========================================================================
+// Compatibility Distance
+// ===========================================================================
+
+double Genome::compatibility_distance(
+    const Genome& a,
+    const Genome& b,
+    const Config& cfg
+) {
+    // Both connection vectors are sorted by innovation number,
+    // so we do a single linear merge pass.
+    size_t i = 0, j = 0;
+    uint32_t excess = 0;
+    uint32_t disjoint = 0;
+    double weight_diff_sum = 0.0;
+    uint32_t matching = 0;
+
+    while (i < a.connections.size() && j < b.connections.size()) {
+        uint32_t innov_a = a.connections[i].innovation;
+        uint32_t innov_b = b.connections[j].innovation;
+
+        if (innov_a == innov_b) {
+            weight_diff_sum += std::abs(a.connections[i].weight - b.connections[j].weight);
+            ++matching;
+            ++i;
+            ++j;
+        } else if (innov_a < innov_b) {
+            ++disjoint;
+            ++i;
+        } else {
+            ++disjoint;
+            ++j;
+        }
+    }
+
+    // Remaining genes in whichever genome is longer are excess
+    excess = static_cast<uint32_t>((a.connections.size() - i) + (b.connections.size() - j));
+
+    // N = gene count of the larger genome (1 if both small, per Stanley's paper)
+    double n = static_cast<double>(std::max(a.connections.size(), b.connections.size()));
+    if (n < 1.0) n = 1.0;
+
+    double avg_weight_diff = (matching > 0) ? (weight_diff_sum / matching) : 0.0;
+
+    return (cfg.c1 * excess + cfg.c2 * disjoint) / n + cfg.c3 * avg_weight_diff;
+}
+
+// ===========================================================================
+// Private Helpers
+// ===========================================================================
+
+void Genome::add_connection(const ConnectionGene& conn) {
+    connection_set_.insert(pack_pair(conn.from, conn.to));
+
+    // Insert while maintaining sorted order by innovation number
+    auto it = std::lower_bound(
+        connections.begin(), connections.end(), conn.innovation,
+        [](const ConnectionGene& c, uint32_t val) { return c.innovation < val; }
+    );
+    connections.insert(it, conn);
+}
+
+bool Genome::has_connection(uint32_t from, uint32_t to) const {
+    return connection_set_.count(pack_pair(from, to)) > 0;
+}
+
+bool Genome::would_create_cycle(uint32_t from, uint32_t to) const {
+    // BFS from 'to' following existing connections.
+    // If we can reach 'from', adding from->to would create a cycle.
+    std::unordered_set<uint32_t> visited;
+    std::queue<uint32_t> frontier;
+    frontier.push(to);
+    visited.insert(to);
+
+    while (!frontier.empty()) {
+        uint32_t current = frontier.front();
+        frontier.pop();
+
+        for (const auto& c : connections) {
+            // Check all connections, not just enabled ones. A disabled connection
+            // can be re-enabled at any time (crossover, toggle mutation), so we
+            // must treat the full structural graph as permanent when checking for
+            // cycles. Only considering enabled connections here allowed cycles to
+            // form when a disabled gene was later re-enabled.
+            if (c.from == current) {
+                if (c.to == from) return true;
+                if (visited.insert(c.to).second) {
+                    frontier.push(c.to);
+                }
+            }
+        }
+    }
+
+    return false;
+}
+
+} // namespace neat
+#include "neat/innovation.hpp"
+
+namespace neat {
+
+InnovationTracker::InnovationTracker(uint32_t start_counter)
+    : counter_(start_counter) {}
+
+uint32_t InnovationTracker::get_or_assign(uint32_t from, uint32_t to) {
+    uint64_t key = (static_cast<uint64_t>(from) << 32) | to;
+    auto it = generation_cache_.find(key);
+    if (it != generation_cache_.end()) {
+        return it->second;
+    }
+    uint32_t innovation = counter_++;
+    generation_cache_[key] = innovation;
+    return innovation;
+}
+
+void InnovationTracker::next_generation() {
+    generation_cache_.clear();
+}
+
+uint32_t InnovationTracker::current_counter() const {
+    return counter_;
+}
+
+} // namespace neat
+#include "neat/network.hpp"
+#include "neat/config.hpp"
+
+#include <cassert>
+#include <cmath>
+#include <queue>
+#include <stdexcept>
+#include <unordered_map>
+
+namespace neat {
+
+// ---------------------------------------------------------------------------
+// Activation functions
+// ---------------------------------------------------------------------------
+
+static double apply_activation(double x, ActivationType type) {
+    switch (type) {
+        case ActivationType::SIGMOID:    return 1.0 / (1.0 + std::exp(-x));
+        case ActivationType::TANH:       return std::tanh(x);
+        case ActivationType::RELU:       return x > 0.0 ? x : 0.0;
+        case ActivationType::LEAKY_RELU: return x > 0.0 ? x : 0.01 * x;
+    }
+    return x; // unreachable
+}
+
+// ---------------------------------------------------------------------------
+// Construction — topological sort via Kahn's algorithm
+// ---------------------------------------------------------------------------
+
+Network::Network(const Genome& genome, const Config& cfg)
+    : num_inputs_(genome.num_inputs())
+    , num_outputs_(genome.num_outputs())
+    , cfg_(&cfg)
+{
+    const auto& nodes = genome.nodes;
+    const auto& conns = genome.connections;
+
+    // Assign a compact index to each node for the value buffer.
+    node_index_.resize(nodes.back().id + 1, UINT32_MAX);
+    node_types_.resize(nodes.back().id + 1);
+    for (uint32_t i = 0; i < static_cast<uint32_t>(nodes.size()); ++i) {
+        node_index_[nodes[i].id] = i;
+        node_types_[nodes[i].id] = nodes[i].type;
+    }
+
+    // Build incoming adjacency list and in-degree counts for Kahn's.
+    uint32_t max_id = nodes.back().id;
+    incoming_.resize(max_id + 1);
+
+    std::unordered_map<uint32_t, uint32_t> in_degree;
+    for (const auto& n : nodes) {
+        in_degree[n.id] = 0;
+    }
+    for (const auto& c : conns) {
+        if (!c.enabled) continue;
+        incoming_[c.to].push_back({c.from, c.to, c.weight});
+        in_degree[c.to]++;
+    }
+
+    // Build outgoing adjacency list for Kahn's — maps node_id -> list of targets.
+    std::vector<std::vector<uint32_t>> outgoing(max_id + 1);
+    for (uint32_t target = 0; target < static_cast<uint32_t>(incoming_.size()); ++target) {
+        for (const auto& c : incoming_[target]) {
+            outgoing[c.from].push_back(c.to);
+        }
+    }
+
+    // Kahn's algorithm: seed with all zero-in-degree nodes (INPUT and BIAS).
+    std::queue<uint32_t> ready;
+    for (const auto& n : nodes) {
+        if (in_degree[n.id] == 0) {
+            ready.push(n.id);
+        }
+    }
+
+    while (!ready.empty()) {
+        uint32_t node_id = ready.front();
+        ready.pop();
+        activation_order_.push_back(node_id);
+
+        for (uint32_t target : outgoing[node_id]) {
+            if (--in_degree[target] == 0) {
+                ready.push(target);
+            }
+        }
+    }
+
+    if (activation_order_.size() != nodes.size()) {
+        throw std::runtime_error("Network::Network: cycle detected in genome graph");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Forward pass
+// ---------------------------------------------------------------------------
+
+std::vector<double> Network::activate(const std::vector<double>& inputs) const {
+    if (inputs.size() != num_inputs_) {
+        throw std::invalid_argument("Network::activate: wrong number of inputs");
+    }
+
+    // Value buffer indexed by node_index_.
+    std::vector<double> values(node_index_.size(), 0.0);
+
+    // Seed inputs and bias. The genome always places bias at id 0, then inputs.
+    for (uint32_t id = 0; id < static_cast<uint32_t>(node_types_.size()); ++id) {
+        if (node_index_[id] == UINT32_MAX) continue;
+        if (node_types_[id] == NodeType::BIAS) {
+            values[id] = 1.0;
+        }
+    }
+    // Input nodes are ids 1..num_inputs_ (bias is 0).
+    for (uint32_t i = 0; i < num_inputs_; ++i) {
+        values[i + 1] = inputs[i];
+    }
+
+    // Propagate in topological order.
+    for (uint32_t node_id : activation_order_) {
+        NodeType type = node_types_[node_id];
+        if (type == NodeType::BIAS || type == NodeType::INPUT) continue;
+
+        double sum = 0.0;
+        for (const auto& c : incoming_[node_id]) {
+            sum += values[c.from] * c.weight;
+        }
+        values[node_id] = apply_activation(sum, cfg_->activation);
+    }
+
+    // Collect outputs in genome order (OUTPUT nodes after bias+inputs).
+    std::vector<double> outputs;
+    outputs.reserve(num_outputs_);
+    for (const auto& id : activation_order_) {
+        if (node_types_[id] == NodeType::OUTPUT) {
+            outputs.push_back(values[id]);
+        }
+    }
+    return outputs;
+}
+
+} // namespace neat
+#include "neat/population.hpp"
+
+#include <algorithm>
+#include <cassert>
+#include <cmath>
+#include <numeric>
+#include <stdexcept>
+
+namespace neat {
+
+// ===========================================================================
+// Construction
+// ===========================================================================
+
+Population::Population(const Config& cfg)
+    : cfg_(cfg)
+    , rng_(cfg.seed)
+    , innovations_()
+{
+    cfg_.validate();
+
+    genomes_.reserve(cfg_.population_size);
+    for (uint32_t i = 0; i < cfg_.population_size; ++i) {
+        genomes_.push_back(Genome::create_minimal(
+            cfg_.num_inputs, cfg_.num_outputs, rng_, innovations_
+        ));
+    }
+}
+
+std::vector<Genome>& Population::genomes() {
+    return genomes_;
+}
+
+// ===========================================================================
+// Public API — run_generation / run_until / visualization helpers
+// ===========================================================================
+
+GenerationResult Population::run_generation(const EvalFn& eval_fn) {
+    // Evaluate every genome. Building Network per genome is intentionally
+    // done here so the user's eval_fn only deals with inputs and outputs.
+    for (auto& genome : genomes_) {
+        Network net(genome, cfg_);
+        genome.fitness = eval_fn(net);
+    }
+
+    // Take snapshots for visualization before epoch() replaces genomes_.
+    auto best_it  = std::max_element(genomes_.begin(), genomes_.end(),
+        [](const Genome& a, const Genome& b) { return a.fitness < b.fitness; });
+    auto worst_it = std::min_element(genomes_.begin(), genomes_.end(),
+        [](const Genome& a, const Genome& b) { return a.fitness < b.fitness; });
+    int random_idx = rng_.random_int(0, static_cast<int>(genomes_.size()) - 1);
+
+    snapshot_best_   = *best_it;
+    snapshot_worst_  = *worst_it;
+    snapshot_random_ = genomes_[random_idx];
+
+    double total = 0.0;
+    for (const auto& g : genomes_) total += g.fitness;
+    uint32_t evaluated_generation = generation_;
+    double   best_fitness         = best_it->fitness;
+    double   mean_fitness         = total / static_cast<double>(genomes_.size());
+    double   worst_fitness        = worst_it->fitness;
+
+    // epoch() calls speciate() which populates species_ — num_species() is
+    // meaningful only after that, so we read it after the epoch completes.
+    epoch();
+
+    return GenerationResult{
+        evaluated_generation,
+        best_fitness,
+        mean_fitness,
+        worst_fitness,
+        num_species()
+    };
+}
+
+GenerationResult Population::run_until(const EvalFn& eval_fn, const StopFn& stop_fn) {
+    GenerationResult result{};
+    do {
+        result = run_generation(eval_fn);
+    } while (!stop_fn(result));
+    return result;
+}
+
+// ---------------------------------------------------------------------------
+// Visualization helpers
+// ---------------------------------------------------------------------------
+
+static Network build_or_throw(const std::optional<Genome>& snapshot,
+                               const Config& cfg,
+                               const char* name)
+{
+    if (!snapshot.has_value()) {
+        throw std::logic_error(
+            std::string(name) + " called before any generation has run");
+    }
+    return Network(*snapshot, cfg);
+}
+
+Network Population::best_network() const {
+    return build_or_throw(snapshot_best_, cfg_, "best_network()");
+}
+
+Network Population::worst_network() const {
+    return build_or_throw(snapshot_worst_, cfg_, "worst_network()");
+}
+
+Network Population::random_network() {
+    return build_or_throw(snapshot_random_, cfg_, "random_network()");
+}
+
+// ===========================================================================
+// epoch
+// ===========================================================================
+
+void Population::epoch() {
+    speciate();
+    adjust_fitness();
+    reproduce();
+    ++generation_;
+}
+
+// ===========================================================================
+// Speciation
+//
+// Each genome is compared against the representative of each existing species.
+// If it falls within compat_threshold it joins that species, otherwise a new
+// species is created. Representatives are chosen randomly from the previous
+// generation's members (Stanley's approach).
+// ===========================================================================
+
+void Population::speciate() {
+    // Clear members but keep representatives and stagnation state
+    for (auto& s : species_) {
+        s.members.clear();
+    }
+
+    for (auto& genome : genomes_) {
+        bool placed = false;
+        for (auto& s : species_) {
+            double dist = Genome::compatibility_distance(genome, s.representative, cfg_);
+            if (dist < cfg_.compat_threshold) {
+                s.members.push_back(std::move(genome));
+                placed = true;
+                break;
+            }
+        }
+        if (!placed) {
+            Species ns;
+            ns.representative = genome;
+            ns.members.push_back(std::move(genome));
+            species_.push_back(std::move(ns));
+        }
+    }
+
+    // Remove extinct species
+    species_.erase(
+        std::remove_if(species_.begin(), species_.end(),
+            [](const Species& s) { return s.members.empty(); }),
+        species_.end()
+    );
+
+    // Update representatives: pick a random member from the current generation
+    for (auto& s : species_) {
+        int idx = rng_.random_int(0, static_cast<int>(s.members.size()) - 1);
+        s.representative = s.members[idx];
+    }
+}
+
+// ===========================================================================
+// Adjusted fitness
+//
+// Each genome's adjusted fitness is its raw fitness divided by species size.
+// This gives smaller species a proportional share of reproduction, preventing
+// any one species from dominating by sheer numbers.
+// ===========================================================================
+
+void Population::adjust_fitness() {
+    for (auto& s : species_) {
+        double best_in_species = 0.0;
+        double size = static_cast<double>(s.members.size());
+
+        for (auto& g : s.members) {
+            g.adjusted_fitness = g.fitness / size;
+            if (g.fitness > best_in_species) {
+                best_in_species = g.fitness;
+            }
+        }
+
+        if (best_in_species > s.best_fitness) {
+            s.best_fitness = best_in_species;
+            s.stagnation   = 0;
+        } else {
+            ++s.stagnation;
+        }
+    }
+}
+
+// ===========================================================================
+// Reproduction
+//
+// Offspring are allocated proportionally to each species' share of the total
+// adjusted fitness. Stagnant species are culled before allocation (the species
+// containing the global best genome is always protected).
+//
+// Within each species:
+//   1. Sort by fitness descending
+//   2. Keep top survival_threshold fraction as parents
+//   3. Produce offspring via crossover + mutation or clone + mutation
+// ===========================================================================
+
+size_t Population::best_species_index() const {
+    size_t best_idx  = 0;
+    double best_fit  = -1e300;
+    for (size_t i = 0; i < species_.size(); ++i) {
+        for (const auto& g : species_[i].members) {
+            if (g.fitness > best_fit) {
+                best_fit = g.fitness;
+                best_idx = i;
+            }
+        }
+    }
+    return best_idx;
+}
+
+void Population::reproduce() {
+    size_t protected_idx = best_species_index();
+
+    // Cull stagnant species, protecting the one with the global best genome
+    for (size_t i = 0; i < species_.size(); ) {
+        if (i != protected_idx && species_[i].stagnation >= cfg_.dropoff_age) {
+            species_.erase(species_.begin() + static_cast<long>(i));
+            if (protected_idx > i) --protected_idx;
+        } else {
+            ++i;
+        }
+    }
+
+    // Compute total adjusted fitness for proportional allocation
+    double total_adj = 0.0;
+    for (const auto& s : species_) {
+        for (const auto& g : s.members) {
+            total_adj += g.adjusted_fitness;
+        }
+    }
+
+    // Assign offspring counts proportionally using largest-remainder method.
+    // No per-species minimum — a species with zero fitness gets zero offspring
+    // this generation. The remainder pass guarantees the total is exactly
+    // population_size.
+    std::vector<uint32_t> offspring_counts(species_.size(), 0);
+    uint32_t assigned = 0;
+    std::vector<double> remainders(species_.size(), 0.0);
+
+    if (total_adj > 0.0) {
+        for (size_t i = 0; i < species_.size(); ++i) {
+            double species_adj = 0.0;
+            for (const auto& g : species_[i].members) {
+                species_adj += g.adjusted_fitness;
+            }
+            double share        = (species_adj / total_adj) * cfg_.population_size;
+            offspring_counts[i] = static_cast<uint32_t>(share); // floor
+            remainders[i]       = share - std::floor(share);
+            assigned           += offspring_counts[i];
+        }
+    } else {
+        // All fitnesses zero: distribute equally across species
+        uint32_t equal_share = cfg_.population_size / static_cast<uint32_t>(species_.size());
+        for (size_t i = 0; i < species_.size(); ++i) {
+            offspring_counts[i] = equal_share;
+            remainders[i]       = 1.0; // equal remainder priority
+            assigned           += equal_share;
+        }
+    }
+
+    // Distribute any remaining slots to species with the largest remainders
+    while (assigned < cfg_.population_size) {
+        size_t best = std::max_element(remainders.begin(), remainders.end())
+                      - remainders.begin();
+        ++offspring_counts[best];
+        remainders[best] = 0.0;
+        ++assigned;
+    }
+
+    // Reset innovation cache for this generation
+    innovations_.next_generation();
+
+    // Breed offspring
+    std::vector<Genome> next_generation;
+    next_generation.reserve(cfg_.population_size);
+
+    for (size_t si = 0; si < species_.size(); ++si) {
+        auto& members = species_[si].members;
+
+        // Sort descending by fitness
+        std::sort(members.begin(), members.end(),
+            [](const Genome& a, const Genome& b) { return a.fitness > b.fitness; });
+
+        // Cull to top survival_threshold
+        size_t survivors = std::max(size_t{1},
+            static_cast<size_t>(std::ceil(members.size() * cfg_.survival_threshold)));
+        members.resize(survivors);
+
+        uint32_t count = offspring_counts[si];
+        for (uint32_t i = 0; i < count; ++i) {
+            Genome child = [&]() -> Genome {
+                if (members.size() > 1 && rng_.prob(cfg_.prob_crossover)) {
+                    int idx_a = rng_.random_int(0, static_cast<int>(members.size()) - 1);
+                    int idx_b = rng_.random_int(0, static_cast<int>(members.size()) - 1);
+                    // Ensure more_fit is passed as first argument
+                    const Genome& a = members[idx_a];
+                    const Genome& b = members[idx_b];
+                    if (a.fitness >= b.fitness) {
+                        return Genome::crossover(a, b, cfg_, rng_);
+                    } else {
+                        return Genome::crossover(b, a, cfg_, rng_);
+                    }
+                }
+                // Clone a random survivor
+                return members[rng_.random_int(0, static_cast<int>(members.size()) - 1)];
+            }();
+
+            child.mutate(cfg_, rng_, innovations_);
+            next_generation.push_back(std::move(child));
+        }
+    }
+
+    genomes_ = std::move(next_generation);
+}
+
+} // namespace neat
+#include "neat/random.hpp"
+
+namespace neat {
+
+// ----------------------------------------------------------------------------
+// Initialization (SplitMix64)
+// ----------------------------------------------------------------------------
+Random::Random(uint64_t seed) {
+    // We use SplitMix64 to expand the 64-bit seed into 256 bits of state.
+    // It also guarantees the starting state is never all zeros (which would break Xoshiro).
+    auto splitmix64 = [&seed]() -> uint64_t {
+        uint64_t z = (seed += 0x9e3779b97f4a7c15ULL);
+        z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ULL;
+        z = (z ^ (z >> 27)) * 0x94d049bb133111ebULL;
+        return z ^ (z >> 31);
+    };
+
+    state[0] = splitmix64();
+    state[1] = splitmix64();
+    state[2] = splitmix64();
+    state[3] = splitmix64();
+}
+
+// ----------------------------------------------------------------------------
+// The Xoshiro256** Engine
+// ----------------------------------------------------------------------------
+uint64_t Random::next() {
+    const uint64_t result = rotl(state[1] * 5, 7) * 9;
+    const uint64_t t = state[1] << 17;
+
+    state[2] ^= state[0];
+    state[3] ^= state[1];
+    state[1] ^= state[2];
+    state[0] ^= state[3];
+    state[2] ^= t;
+    state[3] = rotl(state[3], 45);
+
+    return result;
+}
+
+// ----------------------------------------------------------------------------
+// Public Interface
+// ----------------------------------------------------------------------------
+double Random::random_double() {
+    // Standard IEEE 754 doubles have 53 bits of precision.
+    // We take the top 53 bits of our generated integer and multiply by 2^-53.
+    // This is mathematically the fastest and most deterministic way to get [0.0, 1.0).
+    return (next() >> 11) * (1.0 / (1ULL << 53));
+}
+
+int Random::random_int(int min, int max) {
+    if (min > max) return min;
+    
+    uint64_t range = static_cast<uint64_t>(max - min + 1);
+    return min + static_cast<int>(next() % range);
+}
+
+bool Random::prob(double p) {
+    if (p <= 0.0) return false;
+    if (p >= 1.0) return true;
+    return random_double() < p;
+}
+
+} // namespace neat
