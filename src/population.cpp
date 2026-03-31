@@ -6,6 +6,10 @@
 #include <numeric>
 #include <stdexcept>
 
+#if defined(NEAT_PARALLEL_EVAL)
+    #include <execution>
+#endif
+
 namespace neat {
 
 // ===========================================================================
@@ -36,12 +40,25 @@ std::vector<Genome>& Population::genomes() {
 // ===========================================================================
 
 GenerationResult Population::run_generation(const EvalFn& eval_fn) {
-    // Evaluate every genome. Building Network per genome is intentionally
-    // done here so the user's eval_fn only deals with inputs and outputs.
-    for (auto& genome : genomes_) {
+    // Evaluate every genome. Each genome is independent so this loop is safe
+    // to parallelise — Network construction and eval_fn are per-genome with no
+    // shared mutable state. epoch() always runs single-threaded after this, so
+    // the evolutionary outcome is identical whether parallel_eval is on or off.
+    auto eval_one = [&](Genome& genome) {
         Network net(genome, cfg_);
         genome.fitness = eval_fn(net);
+    };
+
+#if defined(NEAT_PARALLEL_EVAL)
+    if (cfg_.parallel_eval) {
+        std::for_each(std::execution::par_unseq,
+                      genomes_.begin(), genomes_.end(), eval_one);
+    } else {
+        std::for_each(genomes_.begin(), genomes_.end(), eval_one);
     }
+#else
+    std::for_each(genomes_.begin(), genomes_.end(), eval_one);
+#endif
 
     // Take snapshots for visualization before epoch() replaces genomes_.
     auto best_it  = std::max_element(genomes_.begin(), genomes_.end(),

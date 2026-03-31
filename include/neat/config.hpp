@@ -22,7 +22,7 @@ struct Config {
     // System Parameters
     // ------------------------------------------------------------------------
     uint64_t seed = 42; // The master seed for the entire evolutionary run
-    ActivationType activation = ActivationType::SIGMOID; // As per Stanley's original paper
+    ActivationType activation = ActivationType::SIGMOID; // Activation type of neural network.
 
     // ------------------------------------------------------------------------
     // Network Topology
@@ -33,7 +33,7 @@ struct Config {
     // ------------------------------------------------------------------------
     // Population & Evaluation Parameters
     // ------------------------------------------------------------------------
-    unsigned int population_size = 150;
+    unsigned int population_size = 150; // Size of one generation in number of genomes
     
     // The proportion of a species allowed to reproduce (e.g., 0.2 means top 20%)
     double survival_threshold = 0.2; 
@@ -41,10 +41,8 @@ struct Config {
     // Number of generations a species is allowed to stay stagnant before penalization
     unsigned int dropoff_age = 15;
 
-    // ------------------------------------------------------------------------
     // Speciation Parameters (Compatibility Distance formula)
-    // distance = (c1 * E / N) + (c2 * D / N) + (c3 * W)
-    // ------------------------------------------------------------------------
+    // distance = (c1 * E / N) + (c2 * D / N) + (c3 * W) as per Stanley paper
     double compat_threshold = 3.0; // Distance threshold to separate species
     double c1 = 1.0;               // Importance of Excess genes
     double c2 = 1.0;               // Importance of Disjoint genes
@@ -69,6 +67,16 @@ struct Config {
     double prob_crossover        = 0.75; 
     // Chance that an inherently disabled gene is re-enabled during crossover
     double prob_reenable_gene    = 0.25; 
+
+    // ------------------------------------------------------------------------
+    // Parallelism
+    // ------------------------------------------------------------------------
+    // Evaluate genomes in parallel using std::execution::par_unseq.
+    // Requires TBB at build time (CMake detects this automatically).
+    // The eval function MUST be thread-safe — no shared mutable state between
+    // genome evaluations. epoch() always runs single-threaded so the
+    // evolutionary outcome is identical regardless of this setting.
+    bool parallel_eval = true;
 
     // ------------------------------------------------------------------------
     // Methods
