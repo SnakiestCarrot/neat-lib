@@ -35,12 +35,12 @@ A C++ library implementing the NeuroEvolution of Augmenting Topologies (NEAT) al
 
 ## Cleaning the Build
 
-To remove compiled binaries and intermediate object files, navigate to your `build` directory and run:
+To remove compiled binaries and intermediate object files, navigate to the "build" directory and run:
 ```bash
 make clean
 ```
 
-For a complete clean (useful if you change CMake configurations), you can safely remove and recreate the entire build directory from the project root:
+For a complete clean, you can remove and recreate the entire build directory from the project root:
 ```bash
 rm -rf build
 mkdir build
@@ -48,12 +48,13 @@ mkdir build
 
 ## Running Tests and Benchmarks (TODO)
 
-After building the project, you can run the test or benchmark suite to verify the library's functionality and performance:
+After building the project, you can run the test or benchmark suite to verify the library's functionality and performance.
 ```bash
-./tests/neat_tests
+# From the build directory, run:
+ctest
 ```
 
 And:
 ```bash
-./benchmarks/neat_benchmarks
+TODO
 ```
