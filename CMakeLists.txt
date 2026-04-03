@@ -64,6 +64,8 @@ target_link_libraries(neat_snake PRIVATE neat_core)
 add_executable(neat_pendulum envs/pendulum/main.cpp)
 target_link_libraries(neat_pendulum PRIVATE neat_core)
 
+add_subdirectory(envs/cartpole)
+
 # Testing
 enable_testing()
 add_subdirectory(tests)
