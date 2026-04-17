@@ -1,0 +1,4 @@
+add_executable(neat_platformer main.cpp)
+target_include_directories(neat_platformer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(neat_platformer PRIVATE neat_core)
+set_target_properties(neat_platformer PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})

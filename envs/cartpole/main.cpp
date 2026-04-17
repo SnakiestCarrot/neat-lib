@@ -268,6 +268,8 @@ int main() {
     cfg.prob_mutate_weight   = 0.8;
     cfg.prob_weight_replaced = 0.1;
     cfg.weight_mutation_power = 0.5;
+
+    // set 3 below to 0.0 to disable structural mutations and just evolve weights on the fixed topology
     cfg.prob_add_node        = 0.03;
     cfg.prob_add_link        = 0.05;
     cfg.prob_toggle_enable   = 0.01;
@@ -275,6 +277,7 @@ int main() {
     cfg.prob_crossover       = 0.75;
     cfg.prob_reenable_gene   = 0.25;
     cfg.survival_threshold   = 0.2;
+    cfg.c3 = 0.4; // set to 0.0 to ignore weight differences in speciation, 0.4 is a common default
 
     cfg.activation = neat::ActivationType::SIGMOID;
 

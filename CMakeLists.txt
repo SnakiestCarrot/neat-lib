@@ -62,9 +62,11 @@ target_link_libraries(neat_snake PRIVATE neat_core)
 
 # Double Pendulum Environment
 add_executable(neat_pendulum envs/pendulum/main.cpp)
+target_include_directories(neat_pendulum PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/envs/pendulum)
 target_link_libraries(neat_pendulum PRIVATE neat_core)
 
 add_subdirectory(envs/cartpole)
+add_subdirectory(envs/platformer)
 
 # Testing
 enable_testing()
