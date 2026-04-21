@@ -1,6 +1,8 @@
 #include "neat/population.hpp"
 #include "neat/network.hpp"
 #include "neat/config.hpp"
+#include "neat/csv_export.hpp"
+#include "neat/cli.hpp"
 #include "cartpole.hpp"
 
 #include <cstdio>
@@ -252,7 +254,8 @@ draw();
 // Main
 // ============================================================================
 
-int main() {
+int main(int argc, char* argv[]) {
+    std::string csv_path = neat::parse_csv_arg(argc, argv, "cartpole_results.csv");
     neat::Config cfg;
     cfg.num_inputs  = 4;
     cfg.num_outputs = 1;
@@ -281,6 +284,7 @@ int main() {
 
     cfg.activation = neat::ActivationType::SIGMOID;
 
+    neat::parse_config_args(cfg, argc, argv);
     neat::Population pop(cfg);
 
     constexpr int    MAX_GENS      = 300;
@@ -289,10 +293,12 @@ int main() {
     std::printf("gen | best     | mean     | worst    | species\n");
     std::printf("----|----------|----------|----------|--------\n");
 
+    std::vector<neat::GenerationResult> all_results;
     for (int gen = 0; gen < MAX_GENS; ++gen) {
         auto result = pop.run_generation([](neat::Network& net) {
             return evaluate(net);
         });
+        all_results.push_back(result);
 
         std::printf("%3u | %8.4f | %8.4f | %8.4f | %3u\n",
             result.generation, result.best_fitness,
@@ -303,6 +309,11 @@ int main() {
             std::printf("\nSolved at generation %u!\n", result.generation);
             break;
         }
+    }
+
+    if (!csv_path.empty()) {
+        neat::write_csv(csv_path, all_results, cfg.seed);
+        std::printf("Wrote %s\n", csv_path.c_str());
     }
 
     std::printf("\nRecording best network trajectory...\n");

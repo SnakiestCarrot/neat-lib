@@ -1,4 +1,5 @@
 #include "neat/neat.hpp"
+#include "neat/csv_export.hpp"
 #include "snake_game.hpp"
 
 #include <algorithm>
@@ -101,12 +102,22 @@ static void visualize(neat::Network& net, uint32_t generation) {
 // Main
 // ============================================================================
 
-int main() {
+static bool has_flag(int argc, char* argv[], const char* flag) {
+    for (int i = 1; i < argc; ++i)
+        if (std::string(argv[i]) == flag) return true;
+    return false;
+}
+
+int main(int argc, char* argv[]) {
+    std::string csv_path = neat::parse_csv_arg(argc, argv, "snake_results.csv");
+    bool visualize_on    = !has_flag(argc, argv, "--no-viz");
     neat::Config cfg;
     cfg.num_inputs      = 12;  // 3 signals x 4 relative directions
     cfg.num_outputs     = 3;   // turn left, straight, turn right
     cfg.population_size = 30;
     cfg.seed            = 42;
+
+    neat::parse_config_args(cfg, argc, argv);
 
     std::cout << "=== NEAT Snake " << GRID << "x" << GRID << " ===\n"
               << "Population: " << cfg.population_size
@@ -115,26 +126,33 @@ int main() {
 
     neat::Population pop(cfg);
 
-    pop.run_until(
+    auto run = pop.run_until(
         [&](neat::Network& net) {
             return evaluate(net, pop.generation());
         },
         [&](const neat::GenerationResult& r) {
             print_stats(r);
 
-            if (r.generation % 1000 == 0) {
+            if (visualize_on && r.generation % 1000 == 0) {
                 auto best = pop.best_network();
                 visualize(best, r.generation);
             }
 
-            return r.generation >= 10000;
+            return r.generation >= 1000;
         }
     );
 
-    std::cout << "\n=== Training complete ===\n"
-              << "Showing final best network...\n\n";
-    auto best = pop.best_network();
-    visualize(best, pop.generation() - 1);
+    if (!csv_path.empty()) {
+        neat::write_csv(csv_path, run.generations, cfg.seed);
+        std::cout << "Wrote " << csv_path << "\n";
+    }
+
+    std::cout << "\n=== Training complete ===\n";
+    if (visualize_on) {
+        std::cout << "Showing final best network...\n\n";
+        auto best = pop.best_network();
+        visualize(best, pop.generation() - 1);
+    }
 
     return 0;
 }

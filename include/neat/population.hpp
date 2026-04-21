@@ -20,6 +20,17 @@ struct GenerationResult {
     double   mean_fitness;
     double   worst_fitness;
     uint32_t num_species;
+    // Wall-clock timings in milliseconds for each phase.
+    double   time_eval_ms;
+    double   time_speciate_ms;
+    double   time_reproduce_ms;
+    double   time_total_ms;
+};
+
+// Result of a full run_until() call.
+struct RunResult {
+    std::vector<GenerationResult> generations;
+    bool converged = false; // true if stop_fn returned true before the budget ran out
 };
 
 // ---------------------------------------------------------------------------
@@ -70,8 +81,8 @@ public:
     GenerationResult run_generation(const EvalFn& eval_fn);
 
     // Keep calling run_generation() until stop_fn returns true.
-    // Returns the GenerationResult from the final generation.
-    GenerationResult run_until(const EvalFn& eval_fn, const StopFn& stop_fn);
+    // Returns all per-generation results and a convergence flag.
+    RunResult run_until(const EvalFn& eval_fn, const StopFn& stop_fn);
 
     // -----------------------------------------------------------------------
     // Visualization helpers
@@ -104,7 +115,6 @@ private:
         uint32_t            stagnation   = 0;
     };
 
-    void   epoch();
     void   speciate();
     void   adjust_fitness();
     void   reproduce();

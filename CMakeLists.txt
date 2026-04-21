@@ -17,6 +17,8 @@ add_library(neat_core
     src/population.cpp
     src/random.cpp
     src/config.cpp
+    src/csv_export.cpp
+    src/cli.cpp
 )
 
 

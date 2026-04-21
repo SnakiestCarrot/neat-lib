@@ -24,7 +24,9 @@
 //       }
 //   );
 
+#include "neat/cli.hpp"
 #include "neat/config.hpp"
+#include "neat/csv_export.hpp"
 #include "neat/genome.hpp"
 #include "neat/innovation.hpp"
 #include "neat/network.hpp"

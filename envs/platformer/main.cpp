@@ -311,7 +311,8 @@ draw();
 // Main
 // ============================================================================
 
-int main() {
+int main(int argc, char* argv[]) {
+    std::string csv_path = neat::parse_csv_arg(argc, argv, "platformer_results.csv");
     neat::Config cfg;
     cfg.num_inputs  = env::Platformer::NUM_OBS;   // 20
     cfg.num_outputs = 3;   // left, right, jump (SIGMOID, thresholded at 0.5)
@@ -340,6 +341,7 @@ int main() {
 
     cfg.activation = neat::ActivationType::SIGMOID;
 
+    neat::parse_config_args(cfg, argc, argv);
     neat::Population pop(cfg);
 
     constexpr int    MAX_GENS      = 1000;
@@ -351,7 +353,7 @@ int main() {
     std::printf("gen | best     | mean     | worst    | species\n");
     std::printf("----|----------|----------|----------|--------\n");
 
-    pop.run_until(
+    auto run = pop.run_until(
         [](neat::Network& net) { return evaluate(net); },
         [](const neat::GenerationResult& r) {
             std::printf("%3u | %8.2f | %8.2f | %8.2f | %3u\n",
@@ -365,6 +367,11 @@ int main() {
             return r.generation >= MAX_GENS;
         }
     );
+
+    if (!csv_path.empty()) {
+        neat::write_csv(csv_path, run.generations, cfg.seed);
+        std::printf("Wrote %s\n", csv_path.c_str());
+    }
 
     std::printf("\nRecording best network trajectory...\n");
     auto best = pop.best_network();

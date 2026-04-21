@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+
 // ============================================================================
 // Evaluate a single network on multiple episodes.
 // Each trial uses a fixed seed so every genome in the same generation
@@ -262,7 +263,8 @@ draw();
 // Main
 // ============================================================================
 
-int main() {
+int main(int argc, char* argv[]) {
+    std::string csv_path = neat::parse_csv_arg(argc, argv, "pendulum_results.csv");
     neat::Config cfg;
     cfg.num_inputs  = 6;   // cos(θ1), sin(θ1), cos(θ2), sin(θ2), θ1_dot, θ2_dot
     cfg.num_outputs = 2;   // torque at joint 1 and joint 2
@@ -294,10 +296,11 @@ int main() {
     // which suits continuous torque control better than SIGMOID.
     cfg.activation = neat::ActivationType::TANH;
 
+    neat::parse_config_args(cfg, argc, argv);
     neat::Population pop(cfg);
 
     constexpr int    MAX_GENS      = 1000;
-    constexpr double SOLVED_THRESH = 15000.0; // ~80% of max per trial (6100), averaged over 5 trials
+    constexpr double SOLVED_THRESH = 15700.0; // ~80% of max per trial (6100), averaged over 5 trials
 
     std::printf("Double Pendulum Balance — NEAT\n");
     std::printf("Inputs: %u  Outputs: %u  Population: %u\n\n",
@@ -305,7 +308,7 @@ int main() {
     std::printf("gen | best     | mean     | worst    | species\n");
     std::printf("----|----------|----------|----------|--------\n");
 
-    pop.run_until(
+    auto run = pop.run_until(
         [](neat::Network& net) { return evaluate(net); },
         [](const neat::GenerationResult& r) {
             std::printf("%3u | %8.4f | %8.4f | %8.4f | %3u\n",
@@ -319,6 +322,11 @@ int main() {
             return r.generation >= MAX_GENS;
         }
     );
+
+    if (!csv_path.empty()) {
+        neat::write_csv(csv_path, run.generations, cfg.seed);
+        std::printf("Wrote %s\n", csv_path.c_str());
+    }
 
     std::printf("\nRecording best network trajectory...\n");
     auto best = pop.best_network();

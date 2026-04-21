@@ -122,7 +122,7 @@ TEST(PopulationTest, RunUntilStopsAtCorrectGeneration) {
         [&](neat::Network&) { return ++f; },
         [](const neat::GenerationResult& r) { return r.generation >= 4; }
     );
-    EXPECT_EQ(result.generation, 4u);
+    EXPECT_EQ(result.generations.back().generation, 4u);
     EXPECT_EQ(pop.generation(),  5u); // epoch() was called after the final eval
 }
 
@@ -132,7 +132,7 @@ TEST(PopulationTest, RunUntilStopsImmediatelyIfConditionMetFirstGen) {
         constant_eval,
         [](const neat::GenerationResult&) { return true; }
     );
-    EXPECT_EQ(result.generation, 0u);
+    EXPECT_EQ(result.generations.back().generation, 0u);
 }
 
 // ============================================================================

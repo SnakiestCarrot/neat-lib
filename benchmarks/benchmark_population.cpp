@@ -50,13 +50,13 @@ static void BM_GenerationsToTargetFitness(benchmark::State& state) {
         neat::Population pop(cfg);
         state.ResumeTiming();
 
-        neat::GenerationResult result = pop.run_until([&pop](neat::Network& net) {
+        auto run = pop.run_until([&pop](neat::Network& net) {
             return snake_eval(net, pop.generation());
         }, [target_score](const neat::GenerationResult& r) {
             return r.best_fitness >= target_score || r.generation >= 1000;
         });
-        
-        total_generations += result.generation;
+
+        total_generations += run.generations.back().generation;
     }
     
     state.counters["AvgGenerations"] = benchmark::Counter(total_generations, benchmark::Counter::kAvgIterations);

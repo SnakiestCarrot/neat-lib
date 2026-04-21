@@ -2,8 +2,8 @@
 
 #include <algorithm>
 #include <cassert>
+#include <chrono>
 #include <cmath>
-#include <numeric>
 #include <stdexcept>
 
 #if defined(NEAT_PARALLEL_EVAL)
@@ -40,15 +40,22 @@ std::vector<Genome>& Population::genomes() {
 // ===========================================================================
 
 GenerationResult Population::run_generation(const EvalFn& eval_fn) {
-    // Evaluate every genome. Each genome is independent so this loop is safe
-    // to parallelise — Network construction and eval_fn are per-genome with no
-    // shared mutable state. epoch() always runs single-threaded after this, so
-    // the evolutionary outcome is identical whether parallel_eval is on or off.
+    using Clock = std::chrono::steady_clock;
+    using Ms    = std::chrono::duration<double, std::milli>;
+
+    auto t_total_start = Clock::now();
+
+    // --- Evaluation phase ---------------------------------------------------
+    // Each genome is independent: Network construction and eval_fn have no
+    // shared mutable state, so this loop is safe to parallelise.
+    // The speciate/reproduce phases always run single-threaded, so the
+    // evolutionary outcome is identical regardless of parallel_eval.
     auto eval_one = [&](Genome& genome) {
         Network net(genome, cfg_);
         genome.fitness = eval_fn(net);
     };
 
+    auto t_eval_start = Clock::now();
 #if defined(NEAT_PARALLEL_EVAL)
     if (cfg_.parallel_eval) {
         std::for_each(std::execution::par_unseq,
@@ -59,8 +66,9 @@ GenerationResult Population::run_generation(const EvalFn& eval_fn) {
 #else
     std::for_each(genomes_.begin(), genomes_.end(), eval_one);
 #endif
+    double time_eval_ms = Ms(Clock::now() - t_eval_start).count();
 
-    // Take snapshots for visualization before epoch() replaces genomes_.
+    // Take snapshots before speciate/reproduce replace genomes_.
     auto best_it  = std::max_element(genomes_.begin(), genomes_.end(),
         [](const Genome& a, const Genome& b) { return a.fitness < b.fitness; });
     auto worst_it = std::min_element(genomes_.begin(), genomes_.end(),
@@ -78,25 +86,43 @@ GenerationResult Population::run_generation(const EvalFn& eval_fn) {
     double   mean_fitness         = total / static_cast<double>(genomes_.size());
     double   worst_fitness        = worst_it->fitness;
 
-    // epoch() calls speciate() which populates species_ — num_species() is
-    // meaningful only after that, so we read it after the epoch completes.
-    epoch();
+    // --- Speciation / selection phase ---------------------------------------
+    auto t_speciate_start = Clock::now();
+    speciate();
+    adjust_fitness();
+    double time_speciate_ms = Ms(Clock::now() - t_speciate_start).count();
+
+    // --- Reproduction / mutation phase --------------------------------------
+    auto t_reproduce_start = Clock::now();
+    reproduce();
+    double time_reproduce_ms = Ms(Clock::now() - t_reproduce_start).count();
+
+    ++generation_;
+
+    double time_total_ms = Ms(Clock::now() - t_total_start).count();
 
     return GenerationResult{
         evaluated_generation,
         best_fitness,
         mean_fitness,
         worst_fitness,
-        num_species()
+        num_species(),
+        time_eval_ms,
+        time_speciate_ms,
+        time_reproduce_ms,
+        time_total_ms,
     };
 }
 
-GenerationResult Population::run_until(const EvalFn& eval_fn, const StopFn& stop_fn) {
-    GenerationResult result{};
+RunResult Population::run_until(const EvalFn& eval_fn, const StopFn& stop_fn) {
+    RunResult run;
+    bool stop = false;
     do {
-        result = run_generation(eval_fn);
-    } while (!stop_fn(result));
-    return result;
+        run.generations.push_back(run_generation(eval_fn));
+        stop = stop_fn(run.generations.back());
+    } while (!stop);
+    run.converged = stop;
+    return run;
 }
 
 // ---------------------------------------------------------------------------
@@ -124,17 +150,6 @@ Network Population::worst_network() const {
 
 Network Population::random_network() {
     return build_or_throw(snapshot_random_, cfg_, "random_network()");
-}
-
-// ===========================================================================
-// epoch
-// ===========================================================================
-
-void Population::epoch() {
-    speciate();
-    adjust_fitness();
-    reproduce();
-    ++generation_;
 }
 
 // ===========================================================================
