@@ -4,3 +4,4 @@ build
 Testing/
 *.csv
 results/
+*.html
