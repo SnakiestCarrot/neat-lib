@@ -11,13 +11,13 @@ BINARY="$SCRIPT_DIR/../../../build/neat_snake"
 
 RESULTS_DIR="$SCRIPT_DIR/results"
 
-NUM_RUNS=30
+NUM_RUNS=300
 
 MASTER_SEED=20250421
 
 # --- NEAT parameters ---------------------------------------------------------
 POPULATION_SIZE=300
-COMPAT_THRESHOLD=3.0
+COMPAT_THRESHOLD=2.0
 DROPOFF_AGE=15
 SURVIVAL_THRESHOLD=0.2
 PROB_ADD_NODE=0.03

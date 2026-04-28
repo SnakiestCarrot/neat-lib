@@ -14,7 +14,7 @@ BINARY="$SCRIPT_DIR/../../../build/neat_cartpole"
 RESULTS_DIR="$SCRIPT_DIR/results"
 
 # --- Number of runs ----------------------------------------------------------
-NUM_RUNS=30
+NUM_RUNS=300
 
 # --- Master seed — change this to get a different (but reproducible) set of seeds
 MASTER_SEED=20250421

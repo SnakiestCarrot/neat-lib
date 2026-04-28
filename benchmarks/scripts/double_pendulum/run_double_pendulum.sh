@@ -11,7 +11,7 @@ BINARY="$SCRIPT_DIR/../../../build/neat_pendulum"
 
 RESULTS_DIR="$SCRIPT_DIR/results"
 
-NUM_RUNS=30
+NUM_RUNS=300
 
 MASTER_SEED=20250421
 

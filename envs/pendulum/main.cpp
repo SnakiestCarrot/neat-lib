@@ -299,7 +299,7 @@ int main(int argc, char* argv[]) {
     neat::parse_config_args(cfg, argc, argv);
 
     constexpr int    MAX_GENS      = 1000;
-    constexpr double SOLVED_THRESH = 15700.0; // ~80% of max per trial (6100), averaged over 5 trials
+    constexpr double SOLVED_THRESH = 15800.0; // ~99.9% of empirical ceiling (~15814)
 
     if (!csv_path.empty()) {
         neat::write_config(neat::config_sidecar_path(csv_path), "pendulum", cfg, {
