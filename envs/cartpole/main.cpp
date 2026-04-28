@@ -285,10 +285,19 @@ int main(int argc, char* argv[]) {
     cfg.activation = neat::ActivationType::SIGMOID;
 
     neat::parse_config_args(cfg, argc, argv);
-    neat::Population pop(cfg);
 
     constexpr int    MAX_GENS      = 300;
     constexpr double SOLVED_THRESH = 0.95;
+
+    if (!csv_path.empty()) {
+        neat::write_config(neat::config_sidecar_path(csv_path), "cartpole", cfg, {
+            {"max_generations", std::to_string(MAX_GENS)},
+            {"solved_threshold", std::to_string(SOLVED_THRESH)},
+            {"num_trials",      std::to_string(NUM_TRIALS)},
+        });
+    }
+
+    neat::Population pop(cfg);
 
     std::printf("gen | best     | mean     | worst    | species\n");
     std::printf("----|----------|----------|----------|--------\n");

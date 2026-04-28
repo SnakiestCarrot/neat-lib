@@ -342,10 +342,19 @@ int main(int argc, char* argv[]) {
     cfg.activation = neat::ActivationType::SIGMOID;
 
     neat::parse_config_args(cfg, argc, argv);
-    neat::Population pop(cfg);
 
     constexpr int    MAX_GENS      = 1000;
     constexpr double SOLVED_THRESH = 1100.0;
+
+    if (!csv_path.empty()) {
+        neat::write_config(neat::config_sidecar_path(csv_path), "platformer", cfg, {
+            {"max_generations", std::to_string(MAX_GENS)},
+            {"solved_threshold", std::to_string(SOLVED_THRESH)},
+            {"flag_bonus",       std::to_string(FLAG_BONUS)},
+        });
+    }
+
+    neat::Population pop(cfg);
 
     std::printf("Platformer (SMB 1-1) — NEAT\n");
     std::printf("Inputs: %u  Outputs: %u  Population: %u\n\n",

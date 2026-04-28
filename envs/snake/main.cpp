@@ -119,6 +119,15 @@ int main(int argc, char* argv[]) {
 
     neat::parse_config_args(cfg, argc, argv);
 
+    constexpr int MAX_GENS = 1000;
+
+    if (!csv_path.empty()) {
+        neat::write_config(neat::config_sidecar_path(csv_path), "snake", cfg, {
+            {"max_generations", std::to_string(MAX_GENS)},
+            {"grid_size",       std::to_string(GRID)},
+        });
+    }
+
     std::cout << "=== NEAT Snake " << GRID << "x" << GRID << " ===\n"
               << "Population: " << cfg.population_size
               << "  |  Inputs: "  << cfg.num_inputs
@@ -138,7 +147,7 @@ int main(int argc, char* argv[]) {
                 visualize(best, r.generation);
             }
 
-            return r.generation >= 1000;
+            return r.generation >= MAX_GENS;
         }
     );
 

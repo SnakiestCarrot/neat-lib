@@ -297,10 +297,22 @@ int main(int argc, char* argv[]) {
     cfg.activation = neat::ActivationType::TANH;
 
     neat::parse_config_args(cfg, argc, argv);
-    neat::Population pop(cfg);
 
     constexpr int    MAX_GENS      = 1000;
     constexpr double SOLVED_THRESH = 15700.0; // ~80% of max per trial (6100), averaged over 5 trials
+
+    if (!csv_path.empty()) {
+        neat::write_config(neat::config_sidecar_path(csv_path), "pendulum", cfg, {
+            {"max_generations", std::to_string(MAX_GENS)},
+            {"solved_threshold", std::to_string(SOLVED_THRESH)},
+            {"num_trials",      std::to_string(NUM_TRIALS)},
+            {"upright_bonus",   std::to_string(UPRIGHT_BONUS)},
+            {"stability_scale", std::to_string(STABILITY_SCALE)},
+            {"calm_scale",      std::to_string(CALM_SCALE)},
+        });
+    }
+
+    neat::Population pop(cfg);
 
     std::printf("Double Pendulum Balance — NEAT\n");
     std::printf("Inputs: %u  Outputs: %u  Population: %u\n\n",
