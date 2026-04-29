@@ -42,6 +42,18 @@ void parse_config_args(Config& cfg, int argc, char* argv[]) {
         } else if (std::strcmp(arg, "--prob-mutate-weight") == 0) {
             cfg.prob_mutate_weight = std::stod(next_val(i));
             ++i;
+        } else if (std::strcmp(arg, "--prob-toggle-enable") == 0) {
+            cfg.prob_toggle_enable = std::stod(next_val(i));
+            ++i;
+        } else if (std::strcmp(arg, "--c1") == 0) {
+            cfg.c1 = std::stod(next_val(i));
+            ++i;
+        } else if (std::strcmp(arg, "--c2") == 0) {
+            cfg.c2 = std::stod(next_val(i));
+            ++i;
+        } else if (std::strcmp(arg, "--c3") == 0) {
+            cfg.c3 = std::stod(next_val(i));
+            ++i;
         } else if (std::strcmp(arg, "--parallel-eval") == 0) {
             cfg.parallel_eval = true;
         } else if (std::strcmp(arg, "--no-parallel-eval") == 0) {

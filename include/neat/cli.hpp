@@ -17,6 +17,10 @@ namespace neat {
 //   --prob-add-node <double>
 //   --prob-add-link <double>
 //   --prob-mutate-weight <double>
+//   --prob-toggle-enable <double>
+//   --c1 <double>
+//   --c2 <double>
+//   --c3 <double>
 //   --parallel-eval / --no-parallel-eval
 //   --activation sigmoid|tanh|relu|leaky_relu
 void parse_config_args(Config& cfg, int argc, char* argv[]);

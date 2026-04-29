@@ -5,3 +5,4 @@ Testing/
 *.csv
 results/
 *.html
+.venv
