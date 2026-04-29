@@ -4,5 +4,6 @@ build
 Testing/
 *.csv
 results/
+results_ft/
 *.html
 .venv
