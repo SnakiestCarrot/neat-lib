@@ -1,0 +1,43 @@
+# NEAT run configuration
+# Written: 2026-04-28T11:48:31Z
+
+[run]
+env                    = cartpole
+seed                   = 679536715
+
+[topology]
+num_inputs             = 4
+num_outputs            = 1
+activation             = sigmoid
+
+[population]
+population_size        = 150
+survival_threshold     = 0.2
+dropoff_age            = 15
+
+[speciation]
+compat_threshold       = 3
+c1                     = 1
+c2                     = 1
+c3                     = 0.4
+
+[mutation]
+prob_mutate_weight     = 0.8
+prob_weight_replaced   = 0.1
+weight_mutation_power  = 0.5
+prob_add_node          = 0.03
+prob_add_link          = 0.05
+max_attempts_add_link  = 20
+prob_toggle_enable     = 0.01
+
+[crossover]
+prob_crossover         = 0.75
+prob_reenable_gene     = 0.25
+
+[parallelism]
+parallel_eval          = true
+
+[extras]
+max_generations = 300
+solved_threshold = 0.950000
+num_trials = 5
