@@ -1,0 +1,4 @@
+seed,generation,best_fitness,mean_fitness,worst_fitness,num_species,time_eval_ms,time_speciate_ms,time_reproduce_ms,time_total_ms
+814122999,0,111.498,6.85689,3,1,3.07227,0.081214,2.94774,6.116
+814122999,1,68.2017,13.3464,3,1,2.98365,0.150686,3.14016,6.27819
+814122999,2,1192.62,22.0468,3,1,4.21071,0.161978,2.93127,7.309
