@@ -1,0 +1,43 @@
+# NEAT run configuration
+# Written: 2026-05-02T14:09:18Z
+
+[run]
+env                    = platformer
+seed                   = 338539937
+
+[topology]
+num_inputs             = 20
+num_outputs            = 3
+activation             = relu
+
+[population]
+population_size        = 500
+survival_threshold     = 0.2
+dropoff_age            = 20
+
+[speciation]
+compat_threshold       = 1
+c1                     = 1
+c2                     = 1
+c3                     = 0
+
+[mutation]
+prob_mutate_weight     = 0.8
+prob_weight_replaced   = 0.1
+weight_mutation_power  = 0.5
+prob_add_node          = 0.06
+prob_add_link          = 0.07
+max_attempts_add_link  = 20
+prob_toggle_enable     = 0.05
+
+[crossover]
+prob_crossover         = 0.75
+prob_reenable_gene     = 0.25
+
+[parallelism]
+parallel_eval          = true
+
+[extras]
+max_generations = 1000
+solved_threshold = 1100.000000
+flag_bonus = 1000.000000
